@@ -26,7 +26,6 @@ def veritabanini_yukle():
             "Beşiktaş": "https://arsiv.mackolik.com/Takim/3/Besiktas",
             "Trabzonspor": "https://arsiv.mackolik.com/Takim/4/Trabzonspor",
             "Başakşehir": "https://arsiv.mackolik.com/Takim/2855/Basaksehir"
-            # Kodu çok uzatmamak adına varsayılan listeyi kısalttım, json dosyan zaten var!
         },
         "İngiltere Premier Lig": {"Arsenal": "", "Manchester City": ""},
         "İspanya La Liga": {"Barcelona": "", "Real Madrid": ""}
@@ -41,7 +40,6 @@ def veritabanini_yukle():
 
 VERITABANI = veritabanini_yukle()
 
-# Hafıza (Session State) ayarları (Site yenilendiğinde veriler silinmesin diye)
 if 'df' not in st.session_state:
     st.session_state.df = pd.DataFrame()
 
@@ -70,8 +68,19 @@ def verileri_cek(secilen_takim, url, secilen_sezon):
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
         
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        # --- YENİ AKILLI TARAYICI SEÇİCİ ---
+        # Eğer kod Linux (Streamlit Cloud) üzerinde çalışıyorsa:
+        if os.path.exists("/usr/bin/chromium"):
+            chrome_options.binary_location = "/usr/bin/chromium"
+            service = Service("/usr/bin/chromedriver")
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Eğer kod senin Windows bilgisayarında çalışıyorsa:
+        else:
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        # -----------------------------------
+
         driver.get(url)
         time.sleep(2)
         
@@ -138,7 +147,6 @@ def verileri_cek(secilen_takim, url, secilen_sezon):
         df['MS_Harf'] = df['MS_Sonuc'].map(harf_sozlugu)
         df['İY/MS Formatı'] = df['IY_Harf'] + "/" + df['MS_Harf']
         
-        # Sadece göstereceğimiz sütunları seçelim
         df_son = df[['Tarih', 'Ev Sahibi', 'İY Skoru', 'MS Skoru', 'Deplasman', 'İY/MS Formatı']]
         return df_son, "Başarılı"
         
@@ -159,7 +167,6 @@ def excele_donustur(df):
 st.title("⚽ Profesyonel İddaa/Maç Analiz Programı")
 st.markdown("---")
 
-# Yan Menü (Sidebar) Kontrolleri
 st.sidebar.header("🔍 Arama Ayarları")
 
 secilen_lig = st.sidebar.selectbox("Lig Seçin", list(VERITABANI.keys()))
@@ -171,7 +178,6 @@ secilen_sezon = st.sidebar.selectbox("Sezon Seçin", sezon_secenekleri, index=1)
 
 url = VERITABANI.get(secilen_lig, {}).get(secilen_takim, "")
 
-# Dinamik Link İsteme (Web mantığına uygun)
 if secilen_takim and not url:
     st.sidebar.warning(f"⚠️ {secilen_takim} takımının linki eksik!")
     yeni_url = st.sidebar.text_input("Mackolik Arşiv Linkini Buraya Yapıştırın:")
@@ -182,13 +188,12 @@ if secilen_takim and not url:
                 json.dump(VERITABANI, f, ensure_ascii=False, indent=4)
             st.sidebar.success("Link kaydedildi! Sayfa yenileniyor...")
             time.sleep(1)
-            st.rerun() # Sayfayı yenile
+            st.rerun() 
         else:
             st.sidebar.error("Geçersiz link!")
 
 st.sidebar.markdown("---")
 
-# Veri İndirme Butonu
 if st.sidebar.button("🚀 Verileri Çek", use_container_width=True):
     if url:
         with st.spinner(f'{secilen_sezon} sezonu verileri Mackolik\'ten çekiliyor. Lütfen bekleyin...'):
@@ -197,7 +202,7 @@ if st.sidebar.button("🚀 Verileri Çek", use_container_width=True):
                 st.session_state.df = df
                 st.success(f"✅ {secilen_takim} verileri başarıyla yüklendi!")
             else:
-                st.error(f"❌ Hata: {mesaj}")
+                st.error(f"❌ {mesaj}")
     else:
         st.sidebar.error("Önce takımın linkini kaydetmelisin!")
 
@@ -213,7 +218,6 @@ if not st.session_state.df.empty:
         sirala_secenekleri = ["Eskiden Yeniye", "Yeniden Eskiye"]
         secilen_sirala = st.selectbox("📅 Sıralama:", sirala_secenekleri)
 
-    # Filtreleme İşlemi
     if secilen_filtre == "1/2 veya 2/1":
         df_gosterilecek = df_gosterilecek[df_gosterilecek['İY/MS Formatı'].isin(['1/2', '2/1'])]
     elif secilen_filtre == "1/X veya 2/X":
@@ -221,20 +225,16 @@ if not st.session_state.df.empty:
     elif secilen_filtre != "Tümü":
         df_gosterilecek = df_gosterilecek[df_gosterilecek['İY/MS Formatı'] == secilen_filtre]
         
-    # Sıralama İşlemi
     df_gosterilecek['Gercek_Tarih'] = pd.to_datetime(df_gosterilecek['Tarih'], format='%d.%m.%Y', errors='coerce')
     if secilen_sirala == "Eskiden Yeniye":
         df_gosterilecek = df_gosterilecek.sort_values(by='Gercek_Tarih', ascending=True)
     else:
         df_gosterilecek = df_gosterilecek.sort_values(by='Gercek_Tarih', ascending=False)
     
-    # Gereksiz tarih sütununu gizle
     df_gosterilecek = df_gosterilecek.drop(columns=['Gercek_Tarih'])
 
-    # Tabloyu Web Sitesine Çiz
     st.dataframe(df_gosterilecek, use_container_width=True, hide_index=True)
 
-    # Excel Olarak İndirme Butonu
     excel_verisi = excele_donustur(df_gosterilecek)
     st.download_button(
         label="📥 Ekranda Görünenleri Excel Olarak İndir",
